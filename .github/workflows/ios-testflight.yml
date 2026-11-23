@@ -1,0 +1,68 @@
+# بناء تطبيق دار السلام على الآيفون ورفعه إلى TestFlight. يدوي فقط (لا يعمل من تلقاء نفسه) ولا ينشر شيئاً في App Store.
+# يبني من أحدث ملف dar-alsalam-v*.zip في جذر هذا المستودع. المنطق كله داخل الحزمة (mobile/ci/ios-build.sh)، وهذا الملف يُنشأ مرة واحدة فقط.
+# الدليل: docs/TESTFLIGHT-ar.md داخل الحزمة. لم يُجرَّب على أجهزة Apple بعد: إن فشل أول تشغيل فأرسل لقطة السطر الأحمر.
+name: iOS — TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "رقم الإصدار مثل 0.10.1 (أو latest لأحدث ملف zip)"
+        default: "latest"
+        type: string
+      api_base:
+        description: "عنوان الخادم (بلا / في الآخر)"
+        required: true
+        default: "https://daralsalamclinic.duckdns.org"
+        type: string
+      upload:
+        description: "ارفع إلى TestFlight؟ (أزل العلامة للبناء والتوقيع فقط)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: فك حزمة المشروع
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VERSION" ] || [ "$VERSION" = latest ]; then
+            ZIP=$(ls -1 dar-alsalam-v*.zip 2>/dev/null | sed -nE 's/^dar-alsalam-v([0-9]+)\.([0-9]+)\.([0-9]+)\.zip$/\1 \2 \3 &/p' | sort -n -k1,1 -k2,2 -k3,3 | tail -n 1 | cut -d' ' -f4 || true)
+          else
+            ZIP="dar-alsalam-v${VERSION#v}.zip"
+          fi
+          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then echo "::error::لم أجد حزمة المشروع في جذر المستودع (dar-alsalam-v....zip). ارفعها أولاً."; exit 1; fi
+          echo "الحزمة: $ZIP"
+          shasum -a 256 "$ZIP"
+          mkdir -p "$RUNNER_TEMP/src"
+          unzip -oq "$ZIP" -d "$RUNNER_TEMP/src"
+          SRC="$RUNNER_TEMP/src/dar-alsalam"
+          if [ ! -f "$SRC/mobile/ci/ios-build.sh" ]; then echo "::error::هذه الحزمة قديمة ولا تحوي مسار بناء iOS. استعمل 0.10.1 أو أحدث."; exit 1; fi
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+
+      - name: بناء iOS ثم توقيع سحابي ثم رفع
+        env:
+          API_BASE: ${{ inputs.api_base }}
+          UPLOAD: ${{ inputs.upload }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: bash "$SRC/mobile/ci/ios-build.sh"
