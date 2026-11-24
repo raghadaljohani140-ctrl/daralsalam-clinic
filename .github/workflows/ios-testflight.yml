@@ -1,13 +1,11 @@
-# بناء تطبيق دار السلام على الآيفون ورفعه إلى TestFlight. يدوي فقط (لا يعمل من تلقاء نفسه) ولا ينشر شيئاً في App Store.
-# يبني من أحدث ملف dar-alsalam-v*.zip في جذر هذا المستودع. المنطق كله داخل الحزمة (mobile/ci/ios-build.sh)، وهذا الملف يُنشأ مرة واحدة فقط.
-# الدليل: docs/TESTFLIGHT-ar.md داخل الحزمة. لم يُجرَّب على أجهزة Apple بعد: إن فشل أول تشغيل فأرسل لقطة السطر الأحمر.
+# بناء تطبيق دار السلام على الآيفون ورفعه إلى TestFlight. يدوي فقط ولا ينشر شيئاً في App Store.
 name: iOS — TestFlight
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "رقم الإصدار مثل 0.10.1 (أو latest لأحدث ملف zip)"
+        description: "رقم الإصدار مثل 0.11.7 (أو latest لأحدث ملف zip)"
         default: "latest"
         type: string
       api_base:
@@ -15,8 +13,13 @@ on:
         required: true
         default: "https://daralsalamclinic.duckdns.org"
         type: string
+      app:
+        description: "patient = تطبيق المراجعين، staff = تطبيق الموظفين"
+        default: "patient"
+        type: choice
+        options: [patient, staff]
       upload:
-        description: "ارفع إلى TestFlight؟ (أزل العلامة للبناء والتوقيع فقط)"
+        description: "ارفع إلى TestFlight؟"
         type: boolean
         default: true
 
@@ -54,13 +57,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/src"
           unzip -oq "$ZIP" -d "$RUNNER_TEMP/src"
           SRC="$RUNNER_TEMP/src/dar-alsalam"
-          if [ ! -f "$SRC/mobile/ci/ios-build.sh" ]; then echo "::error::هذه الحزمة قديمة ولا تحوي مسار بناء iOS. استعمل 0.10.1 أو أحدث."; exit 1; fi
+          if [ ! -f "$SRC/mobile/ci/ios-build.sh" ]; then echo "::error::هذه الحزمة قديمة ولا تحوي مسار بناء iOS."; exit 1; fi
           echo "SRC=$SRC" >> "$GITHUB_ENV"
 
       - name: بناء iOS ثم توقيع سحابي ثم رفع
         env:
           API_BASE: ${{ inputs.api_base }}
           UPLOAD: ${{ inputs.upload }}
+          MOBILE_DIR: ${{ inputs.app == 'staff' && 'mobile-staff' || 'mobile' }}
+          BUNDLE_ID: ${{ inputs.app == 'staff' && 'com.daralsalam.staff' || '' }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
